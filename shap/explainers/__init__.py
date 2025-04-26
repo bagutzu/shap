@@ -9,6 +9,7 @@ from ._linear import LinearExplainer
 from ._partition import PartitionExplainer
 from ._permutation import PermutationExplainer
 from ._sampling import SamplingExplainer
+from ._time import TimeExplainer
 from ._tree import TreeExplainer
 
 # Alternative legacy "short-form" aliases, which are kept here for backwards-compatibility
@@ -23,6 +24,7 @@ Partition = PartitionExplainer
 Coalition = CoalitionExplainer
 Permutation = PermutationExplainer
 Sampling = SamplingExplainer
+Time = TimeExplainer
 Tree = TreeExplainer
 
 __all__ = [
@@ -37,5 +39,6 @@ __all__ = [
     "CoalitionExplainer",
     "PermutationExplainer",
     "SamplingExplainer",
+    "TimeExplainer",
     "TreeExplainer",
 ]

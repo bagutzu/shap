@@ -14,6 +14,7 @@ from .explainers._linear import LinearExplainer
 from .explainers._partition import PartitionExplainer
 from .explainers._permutation import PermutationExplainer
 from .explainers._sampling import SamplingExplainer
+from .explainers._time import TimeExplainer
 from .explainers._tree import TreeExplainer
 
 try:
@@ -113,6 +114,7 @@ __all__ = [
     "CoalitionExplainer",
     "PermutationExplainer",
     "SamplingExplainer",
+    "TimeExplainer",
     "TreeExplainer",
     # Plots
     "plots",

@@ -38,3 +38,5 @@ shap/explainers/_kernel_lib.c
 catboost_info
 node_modules
 mpl-results
+
+*.so

@@ -288,6 +288,17 @@ class Explainer(Serializable):
                     linearize_link=linearize_link,
                     **kwargs,
                 )
+            elif algorithm == "time":
+                self.__class__ = explainers.TimeExplainer
+                explainers.TimeExplainer.__init__(
+                    self,
+                    self.model,
+                    self.masker,
+                    link=self.link,
+                    feature_names=self.feature_names,
+                    linearize_link=linearize_link,
+                    **kwargs,
+                )
             else:
                 raise InvalidAlgorithmError(f"Unknown algorithm type passed: {algorithm}!")
 
