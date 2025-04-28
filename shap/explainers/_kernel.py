@@ -298,6 +298,7 @@ class KernelExplainer(Explainer):
             raise DimensionError(emsg)
 
     def explain(self, incoming_instance, **kwargs):
+        log.info("explining...")
         # convert incoming input to a standardized iml object
         instance = convert_to_instance(incoming_instance)
         match_instance_to_data(instance, self.data)

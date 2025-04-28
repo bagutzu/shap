@@ -3,11 +3,13 @@ import time
 
 import numpy as np
 import pandas as pd
+import torch
 
 from .._explanation import Explanation
 from ..utils import safe_isinstance
-from ..utils._exceptions import ExplainerError
-from ..utils._legacy import convert_to_instance, convert_to_model, match_instance_to_data
+from ..utils._exceptions import ExplainerError, DimensionError
+from ..utils._legacy import convert_to_instance, convert_to_model, match_instance_to_data, convert_to_data, \
+    match_model_to_data
 from ._explainer import Explainer
 
 log = logging.getLogger("shap")
@@ -40,15 +42,25 @@ class TimeExplainer(Explainer):
     
     def __init__(self, model, data, feature_names=None, link="identity", **kwargs):
         # Initialize the explainer
-        super().__init__(model, masker=data, link=link, feature_names=feature_names, **kwargs)
+        # super().__init__(model, masker=data, link=link, feature_names=feature_names, **kwargs)
         
         # Store any additional parameters specific to time-series data
         self.time_steps = kwargs.get("time_steps", None)
         self.time_window = kwargs.get("time_window", None)
-        
-        # Convert incoming inputs to standardized objects
-        self.model = convert_to_model(model)
+
+        # TODO - what do we do with this?
         self.keep_index = kwargs.get("keep_index", False)
+
+
+
+        # Convert incoming inputs to standardized objects
+        # print(type(model))
+        self.model = model
+        # self.model = convert_to_model(model)
+
+        # self.model = convert_to_model(model, keep_index=self.keep_index)
+        self.data = convert_to_data(data, keep_index=self.keep_index)
+        # model_null = match_model_to_data(self.model, self.data)
         
         # Set up data properties
         if feature_names is not None:
@@ -91,35 +103,103 @@ class TimeExplainer(Explainer):
             feature_names=feature_names,
             compute_time=time.time() - start_time
         )
-    
+
     def shap_values(self, X, **kwargs):
         """Estimate the SHAP values for a set of samples.
-        
+
         Parameters
         ----------
-        X : numpy.array or pandas.DataFrame
-            A matrix of samples (# samples x # features) on which to explain the model's output.
-            
+        X : numpy.array
+            A matrix of samples (#batch_size x # time_steps x # features) on which to explain the model's output.
+
+        nsamples : "auto" or int
+            Number of times to re-evaluate the model when explaining each prediction. More samples
+            lead to lower variance estimates of the SHAP values. The "auto" setting uses
+            `nsamples = 2 * X.shape[1] + 2048`.
+
+        l1_reg : "num_features(int)", "aic", "bic", or float
+            The l1 regularization to use for feature selection. The estimation
+            procedure is based on a debiased lasso.
+
+            * "num_features(int)" selects a fixed number of top features.
+            * "aic" and "bic" options use the AIC and BIC rules for regularization.
+            * Passing a float directly sets the "alpha" parameter of the
+              ``sklearn.linear_model.Lasso`` model used for feature selection.
+            * "auto" (deprecated): uses "aic" when less than
+              20% of the possible sample space is enumerated, otherwise it uses
+              no regularization.
+
+            .. versionchanged:: 0.47.0
+                The default value changed from ``"auto"`` to ``"num_features(10)"``.
+
+        silent: bool
+            If True, hide tqdm progress bar. Default False.
+
+        gc_collect : bool
+           Run garbage collection after each explanation round. Sometime needed for memory intensive explanations (default False).
+
         Returns
         -------
-        numpy.array
-            The SHAP values for each sample and feature.
+        np.array or list
+            Estimated SHAP values, usually of shape ``(# samples x # features)``.
+
+            Each row sums to the difference between the model output for that
+            sample and the expected value of the model output (which is stored as the ``expected_value``
+            attribute of the explainer).
+
+            The type and shape of the return value depends on the number of model inputs and outputs:
+
+            * one input, one output: array of shape ``(#num_samples, *X.shape[1:])``.
+            * one input, multiple outputs: array of shape ``(#num_samples, *X.shape[1:], #num_outputs)``
+            * multiple inputs: list of arrays of corresponding shape above.
+
+            .. versionchanged:: 0.45.0
+                Return type for models with multiple outputs and one input changed from list to np.ndarray.
+
         """
-        # This is a placeholder implementation
-        # In a real implementation, this would compute actual SHAP values
-        
-        # Convert input to numpy array if it's a DataFrame
-        if isinstance(X, pd.DataFrame):
-            X = X.values
-            
-        # For now, return random values as a placeholder
-        # In a real implementation, this would be replaced with actual SHAP value computation
-        if len(X.shape) == 1:
-            return np.random.random(X.shape[0])
+        log.info("Calculating SHAP values...")
+
+        # TODO - do we need this?
+        # convert dataframes
+        # if isinstance(X, pd.Series):
+        #     X = X.values
+        # elif isinstance(X, pd.DataFrame):
+        #     if self.keep_index:
+        #         index_value = X.index.values
+        #         index_name = X.index.name
+        #         column_name = list(X.columns)
+        #     X = X.values
+        #
+        # x_type = str(type(X))
+        # arr_type = "'numpy.ndarray'>"
+        #
+        # # if sparse, convert to lil for performance
+        # if scipy.sparse.issparse(X) and not scipy.sparse.isspmatrix_lil(X):
+        #     X = X.tolil()
+        # assert x_type.endswith(arr_type) or scipy.sparse.isspmatrix_lil(X), "Unknown instance type: " + x_type
+
+        # single instance
+        if len(X.shape) == 2:
+            data = X.reshape(1, *X.shape)
+            # if self.keep_index:
+            #     data = convert_to_instance_with_index(data, column_name, index_name, index_value)
+            explanation = self.explain(data, **kwargs)
+
+            # vector-output
+            s = explanation.shape
+            out = np.zeros(s)
+            out[:] = explanation
+            return out
+
+        # explain the whole dataset
+        elif len(X.shape) == 3:
+            emsg = "Not yet implemented for matrix of samples, only single instances!"
+            raise ExplainerError(emsg)
         else:
-            return np.random.random(X.shape)
+            emsg = "Instance must have 2 or 3 dimensions!"
+            raise DimensionError(emsg)
     
-    def explain_row(self, *row_args, max_evals, main_effects, error_bounds, outputs, silent, **kwargs):
+    def explain(self, incoming_instance, **kwargs):
         """Explains a single row and returns the explanation data.
         
         This method implements the abstract method from the Explainer base class.
@@ -129,23 +209,16 @@ class TimeExplainer(Explainer):
         dict
             A dictionary containing the explanation data.
         """
-        # This is a placeholder implementation
-        # In a real implementation, this would compute actual explanations
+        # log.info(incoming_instance)
+        log.info(type(self.model))
+        # log.info(incoming_instance)
+        with torch.no_grad():
+            out = self.model(incoming_instance)
+        print(out[0])
+
+        # log.info(out)
         
-        # Convert row_args to a numpy array
-        x = np.array(row_args)
-        
-        # For now, return random values as a placeholder
-        # In a real implementation, this would be replaced with actual explanation computation
-        values = np.random.random(x.shape[0])
-        
-        return {
-            "values": values,
-            "expected_values": 0,
-            "mask_shapes": [x.shape],
-            "main_effects": None,
-            "error_std": None
-        }
+        return out[0].detach().numpy()
     
     @staticmethod
     def supports_model_with_masker(model, masker):
